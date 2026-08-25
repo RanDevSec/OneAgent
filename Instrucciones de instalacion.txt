@@ -1,0 +1,41 @@
+ONE Agent - Instrucciones de instalación
+=========================================
+
+CONTENIDO DE ESTA CARPETA
+--------------------------
+- ONE-Setup.exe -> instalador. Es lo único que hace falta ejecutar.
+
+
+1. INSTALACIÓN
+---------------
+1. Ejecutar "ONE-Setup.exe" (doble clic).
+2. Puede aparecer un aviso de Windows ("Windows protegió su PC" /
+   SmartScreen). Es normal: pasa con cualquier programa nuevo que no está
+   firmado digitalmente. Para continuar:
+       Hacer clic en "Más información" -> "Ejecutar de todas formas".
+3. Seguir el asistente (Siguiente > Siguiente > Instalar). No hace falta
+   ser administrador de la PC.
+4. Al finalizar, queda un acceso directo de "ONE Agent" en el Escritorio
+   y en el menú Inicio.
+
+
+2. PRIMER USO: CLAVE DE ENCRIPTACIÓN
+--------------------------------------
+La primera vez que se abre ONE Agent hay que cargar la clave de
+encriptación del cliente:
+
+1. Generar la clave desde la plataforma web de One.
+2. Abrir ONE Agent (icono del Escritorio).
+3. Iniciar sesión con el usuario y contraseña habituales.
+4. En la ventana de ataque, pegar la clave en el campo
+   "Clave de Encriptación" (panel izquierdo).
+
+Esa clave queda guardada en la PC para las próximas veces: no hace falta
+volver a pegarla en cada sesión, salvo que se reinstale el programa o se
+quiera cambiar de clave.
+
+
+3. DESINSTALACIÓN
+-------------------
+Panel de Windows: Configuración > Aplicaciones > ONE Agent > Desinstalar.
+(o el acceso directo "Desinstalar ONE Agent" en el menú Inicio)
