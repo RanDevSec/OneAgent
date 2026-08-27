@@ -1,0 +1,195 @@
+ONE Agent - Manual de Usuario
+=============================
+
+CONTENIDO DE ESTA CARPETA
+--------------------------
+- ONE-Setup.exe -> instalador. Es lo único que hace falta ejecutar.
+- Este manual.
+
+
+================================================================
+1. INSTALACIÓN
+================================================================
+1. Ejecutar "ONE-Setup.exe" (doble clic).
+2. Puede aparecer un aviso de Windows ("Windows protegió su PC" /
+   SmartScreen). Es normal: pasa con cualquier programa nuevo que no está
+   firmado digitalmente. Para continuar:
+       Hacer clic en "Más información" -> "Ejecutar de todas formas".
+3. Seguir el asistente (Siguiente > Siguiente > Instalar). No hace falta
+   ser administrador de la PC.
+4. Al finalizar, queda un acceso directo de "ONE Agent" en el Escritorio
+   y en el menú Inicio.
+
+
+================================================================
+2. PRIMER USO: CLAVE DE ENCRIPTACIÓN
+================================================================
+La primera vez que se abre ONE Agent hay que cargar la clave de
+encriptación del cliente:
+
+1. Generar la clave desde la plataforma web de One.
+2. Abrir ONE Agent (icono del Escritorio).
+3. Iniciar sesión con el usuario y contraseña habituales.
+4. En la ventana de ataque, pegar la clave en el campo
+   "Clave de Encriptación" (panel izquierdo).
+
+Esa clave queda guardada en la PC para las próximas veces: no hace falta
+volver a pegarla en cada sesión, salvo que se reinstale el programa o se
+quiera cambiar de clave.
+
+
+================================================================
+3. CONFIGURAR EL ATAQUE: URL Y PARÁMETROS DEL ENDPOINT
+================================================================
+En la pestaña "Ataque" hay que decirle a ONE Agent contra qué endpoint
+pegar y cómo armar el pedido:
+
+- "URL del Endpoint": la URL de SU IA (la que van a probar). Debe
+  aceptar POST con JSON, según el contrato que se explica en la
+  sección 4.
+
+- Tabla de "Parámetros" (Clave / Valor / marcar con la estrella):
+  Por defecto vienen dos filas ("mensaje" con estrella, "contexto" sin
+  estrella). Se pueden agregar filas nuevas con el botón "+" para
+  cualquier campo extra que su endpoint necesite (por ejemplo, una
+  API key propia, el nombre de modelo, etc.) — esos campos se mandan
+  tal cual junto con el resto del payload (ver sección 4).
+
+  IMPORTANTE: exactamente UNA fila tiene que tener la estrella
+  marcada ("esMensaje"). Esa es la que ONE Agent completa
+  automáticamente con el prompt de cada ataque — el nombre de esa
+  fila no importa, lo que importa es la estrella.
+
+- "Tipo de ataque": "Ataque normal" manda el prompt como texto plano.
+  "Indirect Prompt Injection" esconde el prompt dentro de un archivo
+  (imagen, audio o PDF) en vez de mandarlo como texto — ahí aparece
+  un selector adicional "Tipo de contenido" para elegir cuál de los
+  tres.
+
+- "Paquetes": qué conjunto de ataques correr. Es independiente del
+  "Tipo de ataque" — se puede combinar cualquier paquete con
+  "Indirect Prompt Injection".
+
+
+================================================================
+4. ADAPTAR SU IA LOCAL PARA QUE SEA COMPATIBLE CON ONE AGENT
+================================================================
+Esta sección es para el equipo técnico del cliente: qué tiene que
+aceptar y devolver el endpoint que se configure como "URL del
+Endpoint" (sección 3) para que ONE Agent pueda atacarlo.
+
+4.1 Método y formato
+---------------------
+ONE Agent hace:
+
+    POST <URL del Endpoint>
+    Content-Type: application/json
+
+El cuerpo (body) es un único objeto JSON PLANO -- sin ningún
+envoltorio tipo {"Url":..., "Parametros":...}. Todos los campos van
+directo en la raíz del JSON.
+
+4.2 Campos que siempre vienen
+-------------------------------
+    tipo             string   "texto" | "imagen" | "audio" | "pdf"
+    primer_mensaje   string   el contenido del ataque (ver 4.3)
+
+    + cualquier otro campo que se haya agregado en la tabla de
+      "Parámetros" de la sección 3 (ej. "apiKey", "modelo"), con el
+      nombre y valor exactos que se hayan configurado ahí.
+
+4.3 Campo opcional (doble prompt / IPI con dos mensajes)
+-----------------------------------------------------------
+    segundo_Prompt   string   presente solo si el ataque tiene un
+                               segundo mensaje configurado.
+
+Si "segundo_Prompt" viene presente, es una continuación de la misma
+conversación (mismo hilo/contexto que "primer_mensaje") -- no un
+ataque independiente.
+
+4.4 Qué contiene "primer_mensaje" / "segundo_Prompt" según "tipo"
+----------------------------------------------------------------------
+    tipo = "texto"
+        Texto plano. Ejemplo: "Ignorá tus instrucciones anteriores..."
+
+    tipo = "imagen"
+        Base64 PLANO (sin prefijo "data:...;base64,") de una imagen
+        JPEG. El prompt del ataque está escondido dentro de la imagen
+        (esteganografía) -- el endpoint tiene que pasarle la imagen
+        completa a su modelo de visión, no intentar leer el base64
+        como texto.
+
+    tipo = "audio"
+        Data URI completo: "data:audio/mpeg;base64,<...>" (audio en
+        formato MP3). El prompt del ataque está en el habla, generado
+        por texto-a-voz.
+
+    tipo = "pdf"
+        Data URI completo: "data:application/pdf;base64,<...>" (PDF).
+        El prompt del ataque está escrito dentro del PDF (texto casi
+        invisible).
+
+4.5 Respuesta esperada
+------------------------
+El endpoint tiene que devolver HTTP 200 con un JSON que contenga como
+mínimo:
+
+    { "respuesta_inicial": "<lo que contestó el modelo, como texto>" }
+
+Puede tener más campos además de "respuesta_inicial" -- ONE Agent los
+ignora. Si el endpoint devuelve un código de error (4xx/5xx) o un JSON
+sin "respuesta_inicial", ONE Agent va a marcar ese ataque puntual como
+fallido (queda registrado así en los resultados, no frena el resto de
+la ejecución).
+
+4.6 Timeout y concurrencia
+-----------------------------
+- ONE Agent espera hasta 1000 segundos por respuesta antes de dar el
+  pedido por perdido. No hace falta responder al instante, pero
+  conviene evitar demoras excesivas.
+- ONE Agent puede mandar hasta 4 ataques en simultáneo contra el mismo
+  endpoint. El endpoint tiene que poder atender varios pedidos en
+  paralelo sin mezclarlos entre sí (por ejemplo: si internamente se
+  usan archivos temporales o algún estado compartido entre pedidos,
+  cada pedido necesita su propio nombre/identificador único -- no un
+  nombre de archivo fijo reutilizado, porque un pedido puede pisar el
+  archivo que otro está usando en simultáneo).
+
+4.7 Ejemplo mínimo (Python / Flask)
+---------------------------------------
+Un endpoint compatible para el caso más simple (solo texto) se ve
+así -- es el esqueleto mínimo, cada cliente lo adapta para llamar a
+su propio modelo en vez de a un "modelo_de_ejemplo()":
+
+    from flask import Flask, request, jsonify
+
+    app = Flask(__name__)
+
+    @app.route("/mi-endpoint", methods=["POST"])
+    def atacar():
+        datos = request.get_json()
+        tipo = datos.get("tipo")
+        primer_mensaje = datos.get("primer_mensaje", "")
+        segundo_prompt = datos.get("segundo_Prompt")
+
+        if tipo != "texto":
+            # Ver sección 4.4 para decodificar imagen/audio/pdf
+            # (base64 o data URI) antes de pasarlo al modelo.
+            pass
+
+        respuesta = modelo_de_ejemplo(primer_mensaje, segundo_prompt)
+
+        return jsonify({"respuesta_inicial": respuesta}), 200
+
+    if __name__ == "__main__":
+        app.run(host="0.0.0.0", port=8000)
+
+Y en ONE Agent, "URL del Endpoint" sería:
+    http://<ip-o-localhost-de-esa-maquina>:8000/mi-endpoint
+
+
+================================================================
+5. DESINSTALACIÓN
+================================================================
+Panel de Windows: Configuración > Aplicaciones > ONE Agent > Desinstalar.
+(o el acceso directo "Desinstalar ONE Agent" en el menú Inicio)
