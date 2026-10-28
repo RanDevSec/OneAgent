@@ -60,15 +60,28 @@ pegar y cómo armar el pedido:
   automáticamente con el prompt de cada ataque — el nombre de esa
   fila no importa, lo que importa es la estrella.
 
-- "Tipo de ataque": "Ataque normal" manda el prompt como texto plano.
-  "Indirect Prompt Injection" esconde el prompt dentro de un archivo
-  (imagen, audio o PDF) en vez de mandarlo como texto — ahí aparece
-  un selector adicional "Tipo de contenido" para elegir cuál de los
-  tres.
+- "Modelo": hay que seleccionar o crear uno antes de poder atacar (es
+  obligatorio). Es solo una etiqueta que identifica la corrida en One
+  — no tiene que coincidir con ningún nombre real que use el endpoint
+  del cliente, y el equipo técnico no necesita hacer nada especial
+  para soportar esto (ver sección 4.2, el campo que le llega sigue
+  siendo el mismo string de siempre).
+
+- "Tipo de ataque": en esta versión el selector muestra dos opciones.
+  "Ataque normal" manda el prompt como texto plano. "Indirect Prompt
+  Injection" esconde el prompt dentro de un archivo (imagen, audio o
+  PDF) en vez de mandarlo como texto — ahí aparece un selector
+  adicional "Tipo de contenido" para elegir cuál de los tres.
+  (GBA, MCP, Multi turno y Ataques agenticos existen en el motor pero
+  todavía no están habilitados en el selector de esta versión — ver
+  sección 4.8 si en algún momento se habilitan, para saber qué cambia
+  del lado del endpoint.)
 
 - "Paquetes": qué conjunto de ataques correr. Es independiente del
   "Tipo de ataque" — se puede combinar cualquier paquete con
-  "Indirect Prompt Injection".
+  "Indirect Prompt Injection". No aplica a "Multi turno" ni "Ataques
+  agenticos": esos se seleccionan directo como "Tipo de ataque", sin
+  elegir paquete.
 
 
 ================================================================
@@ -144,9 +157,20 @@ la ejecución).
 
 4.6 Timeout y concurrencia
 -----------------------------
-- ONE Agent espera hasta 1000 segundos por respuesta antes de dar el
-  pedido por perdido. No hace falta responder al instante, pero
-  conviene evitar demoras excesivas.
+- ONE Agent NO tiene timeout propio: espera la respuesta del endpoint
+  el tiempo que haga falta, sin cortar el pedido (esto es a propósito,
+  para no interrumpir ataques que tardan por el tamaño del
+  prompt/adjunto). Esto significa que, si el endpoint del cliente se
+  cuelga y no responde ni devuelve un error, ONE Agent se queda
+  esperando ESE pedido para siempre, y como los pedidos se procesan en
+  lotes acotados, eso puede frenar el resto de la ejecución.
+  IMPORTANTE: por esto, el endpoint SIEMPRE tiene que poner su propio
+  timeout en la llamada a su modelo (por ejemplo, al llamar a la API
+  de OpenAI/Anthropic/lo que sea) y devolver un error HTTP en vez de
+  quedarse sin responder si esa llamada no vuelve en un tiempo
+  razonable (60-90 segundos suele alcanzar). Un ataque que falla así
+  queda registrado como fallido (sección 4.5) y la ejecución sigue con
+  el resto con normalidad; uno que nunca responde, no.
 - ONE Agent puede mandar hasta 4 ataques en simultáneo contra el mismo
   endpoint. El endpoint tiene que poder atender varios pedidos en
   paralelo sin mezclarlos entre sí (por ejemplo: si internamente se
@@ -186,6 +210,65 @@ su propio modelo en vez de a un "modelo_de_ejemplo()":
 
 Y en ONE Agent, "URL del Endpoint" sería:
     http://<ip-o-localhost-de-esa-maquina>:8000/mi-endpoint
+
+
+4.8 Multiturno y ataques agenticos (campo "messages") -- NO DISPONIBLE EN ESTA VERSION
+--------------------------------------------------------------------------------------
+"Multi turno" y "Ataques agenticos" NO aparecen todavía en el selector
+de "Tipo de ataque" de esta versión (sección 3) -- el equipo técnico
+del cliente NO necesita implementar nada de esta sección para que
+ONE Agent funcione hoy. Se documenta por si se habilitan en una
+versión futura: usan un formato de pedido DISTINTO al de la sección
+4.2 -- en vez de un solo "primer_mensaje", mandan la CONVERSACIÓN
+COMPLETA hasta ese momento:
+
+    {
+      "tipo": "texto",
+      "messages": [
+        {"role": "user", "content": "<mensaje del turno 1>"},
+        {"role": "assistant", "content": "<lo que respondio el target>"},
+        {"role": "user", "content": "<mensaje del turno 2>"},
+        ...
+      ],
+      ... (los demas campos de la tabla de Parametros, igual que siempre)
+    }
+
+Puntos clave para el equipo técnico:
+
+- El endpoint se trata como SIN ESTADO: no hace falta (ni va a venir)
+  ningún "session_id". ONE Agent manda el historial entero en cada
+  turno -- el endpoint solo tiene que tomar ese array de mensajes tal
+  cual y pasárselo a su modelo (la mayoría de las APIs de chat, Ollama
+  incluida, ya aceptan este mismo formato {role, content} de forma
+  nativa).
+- No viene "primer_mensaje" ni "segundo_Prompt" en estos casos -- si
+  su endpoint solo sabe leer esos dos campos, no va a funcionar con
+  Multi turno/Ataques agenticos hasta que también sepa leer "messages".
+- La respuesta esperada es LA MISMA que en el resto de los casos:
+  {"respuesta_inicial": "..."} (sección 4.5). No cambia nada ahí.
+- "Multi turno" corre una conversación adaptativa de varios turnos
+  (la cantidad de turnos la decide el ataque, no es fija). "Ataques
+  agenticos" primero le pregunta al target qué herramientas/funciones
+  tiene disponibles, y según lo que responda arma un segundo mensaje
+  dirigido -- en ambos casos, del lado del endpoint es exactamente el
+  mismo mecanismo: leer "messages" y devolver una respuesta de texto.
+
+Ejemplo de ajuste sobre el esqueleto de la sección 4.7:
+
+    @app.route("/mi-endpoint", methods=["POST"])
+    def atacar():
+        datos = request.get_json()
+        messages = datos.get("messages")
+
+        if messages:
+            # Multi turno / Ataques agenticos: pasar el historial completo
+            respuesta = modelo_de_ejemplo_chat(messages)
+        else:
+            # Ataque normal / IPI (sección 4.2-4.4)
+            primer_mensaje = datos.get("primer_mensaje", "")
+            respuesta = modelo_de_ejemplo(primer_mensaje)
+
+        return jsonify({"respuesta_inicial": respuesta}), 200
 
 
 ================================================================
